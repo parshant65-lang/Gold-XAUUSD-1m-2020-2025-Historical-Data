@@ -1,0 +1,31 @@
+name: Ingest Gold XAU/USD 1m Archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Gold Ingestion in Cloud
+        run: |
+          python ingest_gold.py --start-year 2020 --end-year 2026
+
+      - name: Commit and Push Updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config http.postBuffer 524288000
+          git add -A
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Capture XAU/USD 1m historical klines (2020-2026)" && git push)
