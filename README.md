@@ -11,7 +11,7 @@ High-resolution, institutional-grade 1-minute OHLCV (Open, High, Low, Close, Vol
 
 ## 📂 Repository Structure
 
-All data is structured identically to institutional data conventions by Year, Month, and Date:
+All data is structured identically to institutional market data conventions by Year, Month, and Date:
 
 ```text
 Gold-XAUUSD-1m-2020-2025-Historical-Data/
@@ -39,7 +39,32 @@ Gold-XAUUSD-1m-2020-2025-Historical-Data/
 | `high` | `float` | High price in the 1-minute bar (USD) | `2063.40` |
 | `low` | `float` | Low price in the 1-minute bar (USD) | `2062.50` |
 | `close` | `float` | Close price (USD) | `2063.15` |
-| `volume` | `int` | Trading volume / tick count | `45` |
+| `volume` | `int` | **Tick Volume** (Frequency of price quotes per minute) | `45` |
+
+---
+
+## 🔍 Understanding the "Volume" Field (Tick Volume vs. Share Volume)
+
+If you are coming from equity stock markets (where volume reflects thousands or millions of traded shares), the volume values here may appear modest at first glance (e.g., `12`, `45`, `310`). Here is the essential structural distinction:
+
+### 1. Decentralized (OTC) Nature of Spot Gold
+Unlike centralized equity exchanges (such as the NYSE, NASDAQ, or NSE) where every single transacted share is centrally tallied by a clearinghouse, **Spot Gold (XAU/USD)** trades in a decentralized **Over-The-Counter (OTC)** global interbank market across London (LBMA), New York, Zurich, Tokyo, and Singapore. There is no single universal clearinghouse that records total physical ounces or dollar totals in real-time.
+
+### 2. What is "Tick Volume"?
+In spot foreign exchange and commodity markets, the industry standard metric for volume is **Tick Volume** (also called **Tick Count**):
+* **It measures market activity**: Specifically, how many times the price changed (ticked or was updated) within that 60-second window.
+* **Not contract/dollar count**: It does not represent grams, ounces, or dollar amounts, but rather the intensity of quotation activity.
+
+### 3. How to Interpret Tick Volume Numbers
+
+| Volume Range | Market Activity | Description |
+| :--- | :--- | :--- |
+| **0 – 15** | **Low / Dormant** | Quiet trading hours, Asian/Pacific late-night sessions, or market holidays. |
+| **20 – 100** | **Moderate / Active** | Standard institutional liquidity during active European and London trading sessions. |
+| **100 – 500+** | **High Volatility Burst** | Major session overlaps (London & New York crossover) or major macroeconomic data releases (e.g., US CPI, Non-Farm Payrolls [NFP], FOMC interest rate decisions). |
+
+### 4. Quantitative Validity
+Quantitative and financial econometric research has established that **tick volume exhibits a >90% statistical correlation with actual cash trading volume and market volatility**. A surge in tick count directly signals institutional order flow and active price discovery.
 
 ---
 
