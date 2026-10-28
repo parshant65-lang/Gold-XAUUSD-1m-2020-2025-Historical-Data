@@ -1,99 +1,73 @@
 #!/usr/bin/env python3
 import os
 import sys
+import io
+import re
 import json
-import argparse
-import calendar
 import urllib.request
 from pathlib import Path
+import pandas as pd
 
-DATA_URL = "https://huggingface.co/datasets/ZombitX64/xauusd-gold-price-historical-data-2004-2025/resolve/main/XAU_1m_data.jsonl"
-HEADERS = "timestamp,datetime_utc,open,high,low,close,volume\n"
+DATASET = "bunqi/OANDA_XAUUSD_Gold"
 
-def run(start_year: int, end_year: int):
-    print(f"[*] Ingesting Gold XAU/USD 1m data for range: {start_year} - {end_year}")
-    base_path = Path("XAUUSD/1m")
-    
-    req = urllib.request.Request(DATA_URL, headers={"User-Agent": "Mozilla/5.0"})
-    print(f"[*] Streaming directly from cloud source: {DATA_URL}")
+def run():
+    print("[*] Starting Gold (XAU/USD) Update for 2025-10 to 2026-10...")
+    base_dir = Path("XAUUSD/1m")
+    list_url = f"https://huggingface.co/api/datasets/{DATASET}/tree/main/1"
 
-    current_date = None
-    current_lines = []
-    current_year_str = None
-    current_month_str = None
-    days_written = 0
-    total_rows = 0
-
+    req = urllib.request.Request(list_url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req) as resp:
-        for line_num, raw_line in enumerate(resp, 1):
-            line = raw_line.decode("utf-8", errors="ignore").strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
+        tree = json.loads(resp.read().decode())
 
-            date_raw = row["Date"]  # format: "2004.06.11 07:18"
-            year = int(date_raw[0:4])
+    parquet_files = [f["path"] for f in tree if f["path"].endswith(".parquet")]
+    
+    target_files = []
+    for fpath in parquet_files:
+        m = re.search(r"_(\d{4})-(\d{2})-", fpath)
+        if m:
+            yr = int(m.group(1))
+            mo = int(m.group(2))
+            if (yr == 2025 and mo >= 10) or (yr >= 2026):
+                target_files.append((yr, m.group(2), fpath))
 
-            if year < start_year:
-                continue
-            if year > end_year:
-                print(f"[*] Reached year {year} > {end_year}. Stopping stream.")
-                break
+    target_files.sort(key=lambda x: (x[0], x[1]))
+    print(f"[*] Found {len(target_files)} monthly parquet files to fill the gap.")
 
-            year_str = date_raw[0:4]
-            month_str = date_raw[5:7]
-            day_str = date_raw[8:10]
-            date_key = f"{year_str}-{month_str}-{day_str}"
+    for yr, mo, fpath in target_files:
+        file_url = f"https://huggingface.co/datasets/{DATASET}/resolve/main/{fpath}"
+        print(f"[*] Streaming & parsing Gold {yr}-{mo}...")
 
-            if date_key != current_date:
-                if current_date and current_lines:
-                    day_file = base_path / current_year_str / current_month_str / f"XAUUSD_1m_{current_date}.csv"
-                    day_file.parent.mkdir(parents=True, exist_ok=True)
-                    with open(day_file, "w", encoding="utf-8") as f:
-                        f.write(HEADERS)
-                        f.writelines(current_lines)
-                    days_written += 1
+        f_req = urllib.request.Request(file_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(f_req) as f_resp:
+            df = pd.read_parquet(io.BytesIO(f_resp.read()))
 
-                current_date = date_key
-                current_year_str = year_str
-                current_month_str = month_str
-                current_lines = []
+        if df.empty:
+            continue
 
-            hour_str = date_raw[11:13]
-            min_str = date_raw[14:16]
-            y, m, d = year, int(month_str), int(day_str)
-            h, mn = int(hour_str), int(min_str)
-            ts_ms = calendar.timegm((y, m, d, h, mn, 0)) * 1000
-            dt_utc = f"{year_str}-{month_str}-{day_str} {hour_str}:{min_str}:00"
+        t0 = df["time"].iloc[0]
+        if t0 > 1e16:
+            dt = pd.to_datetime(df["time"], unit="ns", utc=True)
+            ts_ms = (df["time"] // 1_000_000).astype("int64")
+        elif t0 > 1e12:
+            dt = pd.to_datetime(df["time"], unit="ms", utc=True)
+            ts_ms = df["time"].astype("int64")
+        else:
+            dt = pd.to_datetime(df["time"], unit="s", utc=True)
+            ts_ms = (df["time"] * 1000).astype("int64")
 
-            o = row["Open"]
-            h_p = row["High"]
-            l = row["Low"]
-            c = row["Close"]
-            v = row["Volume"]
-            current_lines.append(f"{ts_ms},{dt_utc},{o},{h_p},{l},{c},{v}\n")
-            total_rows += 1
+        df["timestamp"] = ts_ms
+        df["datetime_utc"] = dt.dt.strftime("%Y-%m-%d %H:%M:%S")
+        df["date"] = dt.dt.strftime("%Y-%m-%d")
 
-            if total_rows % 250000 == 0:
-                print(f"[*] Streamed {total_rows:,} candles ({days_written:,} days written)...")
+        for date_str, grp in df.groupby("date"):
+            y_str = date_str[0:4]
+            m_str = date_str[5:7]
+            out_file = base_dir / y_str / m_str / f"XAUUSD_1m_{date_str}.csv"
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            out_cols = ["timestamp", "datetime_utc", "open", "high", "low", "close", "volume"]
+            grp[out_cols].to_csv(out_file, index=False)
 
-    # Flush final day
-    if current_date and current_lines:
-        day_file = base_path / current_year_str / current_month_str / f"XAUUSD_1m_{current_date}.csv"
-        day_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(day_file, "w", encoding="utf-8") as f:
-            f.write(HEADERS)
-            f.writelines(current_lines)
-        days_written += 1
-
-    print(f"[✓] Done! Successfully wrote {days_written:,} daily CSV files ({total_rows:,} 1m candles).")
+    print("[✓] Finished updating missing months through October 2026!")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--start-year", type=int, required=True)
-    parser.add_argument("--end-year", type=int, required=True)
-    args = parser.parse_args()
-    run(args.start_year, args.end_year)
+    run()
