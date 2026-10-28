@@ -18,9 +18,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run Gold Ingestion in Cloud
+      - name: Install Dependencies
         run: |
-          python ingest_gold.py --start-year 2020 --end-year 2026
+          pip install pandas pyarrow
+
+      - name: Run Gold Update in Cloud
+        run: |
+          python ingest_gold.py
 
       - name: Commit and Push Updates
         run: |
@@ -28,4 +32,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config http.postBuffer 524288000
           git add -A
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Capture XAU/USD 1m historical klines (2020-2026)" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update XAU/USD 1m data to October 2026" && git push)
